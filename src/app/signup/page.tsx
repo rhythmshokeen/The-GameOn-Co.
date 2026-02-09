@@ -39,17 +39,32 @@ export default function SignupPage() {
         body: JSON.stringify(data),
       });
 
-      const result = await response.json();
+      // Parse response
+      let result;
+      try {
+        result = await response.json();
+      } catch (parseError) {
+        // If JSON parsing fails, the server might be down
+        throw new Error("Unable to connect to server. Please try again.");
+      }
 
       if (!response.ok) {
-        throw new Error(result.message || "Registration failed");
+        // Use the error message from the API response
+        throw new Error(result.message || result.error || "Registration failed");
       }
 
       // Success - redirect to sports preferences
       router.push("/sports-preferences");
       router.refresh();
     } catch (err: any) {
-      setError(err.message || "Something went wrong. Please try again.");
+      console.error("Signup error:", err);
+      
+      // Handle different types of errors
+      if (err.name === "TypeError" && err.message.includes("fetch")) {
+        setError("Unable to connect to server. Please check your internet connection.");
+      } else {
+        setError(err.message || "Something went wrong. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }

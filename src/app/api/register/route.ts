@@ -7,16 +7,34 @@ import {
   logError,
   ConflictError,
   ValidationError,
+  DatabaseError,
 } from "@/lib/errors";
 import { z } from "zod";
 
 export async function POST(req: Request) {
   try {
+    // Validate DATABASE_URL is set
+    if (!process.env.DATABASE_URL) {
+      throw new DatabaseError(
+        "Database configuration is missing. Please contact support."
+      );
+    }
+
     const body = await req.json();
 
     // Validate input using shared schema
     const validatedData = signupSchema.parse(body);
     const { name, email, phone, password, dateOfBirth, role } = validatedData;
+
+    // Check database connection before proceeding
+    try {
+      await prisma.$connect();
+    } catch (dbError) {
+      console.error("Database connection failed during signup:", dbError);
+      throw new DatabaseError(
+        "Unable to connect to database. Please try again later or contact support if the issue persists."
+      );
+    }
 
     // Check for existing user
     const existingUser = await prisma.user.findUnique({
@@ -93,7 +111,7 @@ export async function POST(req: Request) {
       },
       { status: 201 }
     );
-  } catch (error) {
+  } catch (error: any) {
     logError(error, "REGISTER_API");
 
     // Handle Zod validation errors
@@ -103,6 +121,21 @@ export async function POST(req: Request) {
       );
       const errorResponse = formatErrorResponse(validationError);
       return NextResponse.json(errorResponse, { status: 400 });
+    }
+
+    // Handle database connection errors specifically
+    if (
+      error?.message?.includes("Can't reach database") ||
+      error?.message?.includes("P1001") ||
+      error?.code === "P1001"
+    ) {
+      const dbError = new DatabaseError(
+        process.env.NODE_ENV === "production"
+          ? "Service temporarily unavailable. Please try again in a moment."
+          : "Database is not running. Start it with: npm run dev:start"
+      );
+      const errorResponse = formatErrorResponse(dbError);
+      return NextResponse.json(errorResponse, { status: 503 });
     }
 
     // Handle all other errors with formatted response
